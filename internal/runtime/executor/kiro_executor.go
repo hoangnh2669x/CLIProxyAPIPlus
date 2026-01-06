@@ -381,7 +381,7 @@ func (e *KiroExecutor) executeWithRetry(ctx context.Context, auth *cliproxyauth.
 				AuthValue: authValue,
 			})
 
-			httpClient := newProxyAwareHTTPClient(ctx, e.cfg, auth, 120*time.Second)
+			httpClient := newProxyAwareHTTPClient(ctx, e.cfg, auth, 0)
 			httpResp, err := httpClient.Do(httpReq)
 			if err != nil {
 				recordAPIResponseError(ctx, e.cfg, err)
