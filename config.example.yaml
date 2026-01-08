@@ -213,6 +213,19 @@ ws-auth: false
 #     - from: "claude-haiku-4-5-20251001"
 #       to: "gemini-2.5-flash"
 
+# Claude Code CLI Integration
+# claudecode:
+#   # Claude Code Model Mappings
+#   # Route unavailable Claude Code models to alternative models available in your local proxy.
+#   # Useful when Claude Code CLI requests models you don't have access to (e.g., Claude Opus)
+#   # but you have a similar model available (e.g., Gemini Flash).
+#   model-mappings:
+#     - from: "claude-3-opus"                       # Model requested by Claude Code CLI
+#       to: "gemini-2.0-flash"                      # Route to this available model instead
+#     - from: "claude-.*"                           # Regex pattern to match multiple models
+#       to: "gemini-2.0-flash"
+#       regex: true                                 # Enable regex matching for the 'from' field
+
 # Global OAuth model name mappings (per channel)
 # These mappings rename model IDs for both model listing and request routing.
 # Supported channels: gemini-cli, vertex, aistudio, antigravity, claude, codex, qwen, iflow, kiro, github-copilot.

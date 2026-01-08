@@ -95,6 +95,9 @@ type Config struct {
 	// AmpCode contains Amp CLI upstream configuration, management restrictions, and model mappings.
 	AmpCode AmpCode `yaml:"ampcode" json:"ampcode"`
 
+	// ClaudeCode contains Claude Code CLI configuration including model mappings.
+	ClaudeCode ClaudeCodeConfig `yaml:"claudecode" json:"claudecode"`
+
 	// OAuthExcludedModels defines per-provider global model exclusions applied to OAuth/file-backed auth entries.
 	// Supported channels: gemini-cli, vertex, aistudio, antigravity, claude, codex, qwen, iflow, kiro, github-copilot.
 	OAuthExcludedModels map[string][]string `yaml:"oauth-excluded-models,omitempty" json:"oauth-excluded-models,omitempty"`
@@ -223,6 +226,18 @@ type AmpUpstreamAPIKeyEntry struct {
 
 	// APIKeys are the client API keys (from top-level api-keys) that map to this upstream key.
 	APIKeys []string `yaml:"api-keys" json:"api-keys"`
+}
+
+// ClaudeCodeConfig groups Claude Code CLI integration settings including model mappings.
+type ClaudeCodeConfig struct {
+	// ModelMappings defines model name mappings for Claude Code CLI requests.
+	// When Claude Code requests a model that isn't available locally, these mappings
+	// allow routing to an alternative model that IS available.
+	ModelMappings []AmpModelMapping `yaml:"model-mappings" json:"model-mappings"`
+
+	// ForceModelMappings when true, model mappings take precedence over local API keys.
+	// When false (default), local API keys are used first if available.
+	ForceModelMappings bool `yaml:"force-model-mappings" json:"force-model-mappings"`
 }
 
 // PayloadConfig defines default and override parameter rules applied to provider payloads.

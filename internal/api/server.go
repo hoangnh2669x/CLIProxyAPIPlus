@@ -23,6 +23,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/api/middleware"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/api/modules"
 	ampmodule "github.com/router-for-me/CLIProxyAPI/v6/internal/api/modules/amp"
+	claudemodule "github.com/router-for-me/CLIProxyAPI/v6/internal/api/modules/claude"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/logging"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/managementasset"
@@ -155,6 +156,12 @@ type Server struct {
 	// ampModule is the Amp routing module for model mapping hot-reload
 	ampModule *ampmodule.AmpModule
 
+	// claudeCodeMapper is the ClaudeCode model mapper for hot-reload support
+	claudeCodeMapper *claudemodule.ClaudeCodeModelMapper
+
+	// claudeCodeMappingHandler wraps ClaudeCode routes with model mapping
+	claudeCodeMappingHandler *claudemodule.ModelMappingHandler
+
 	// managementRoutesRegistered tracks whether the management routes have been attached to the engine.
 	managementRoutesRegistered atomic.Bool
 	// managementRoutesEnabled controls whether management endpoints serve real handlers.
@@ -277,6 +284,12 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 	s.mgmt.SetLogDirectory(logDir)
 	s.localPassword = optionState.localPassword
 
+	// Initialize ClaudeCode model mapper
+	s.claudeCodeMapper = claudemodule.NewClaudeCodeModelMapper(cfg.ClaudeCode.ModelMappings)
+	s.claudeCodeMappingHandler = claudemodule.NewModelMappingHandler(s.claudeCodeMapper, func() bool {
+		return s.cfg.ClaudeCode.ForceModelMappings
+	})
+
 	// Setup routes
 	s.setupRoutes()
 
@@ -335,8 +348,8 @@ func (s *Server) setupRoutes() {
 		v1.GET("/models", s.unifiedModelsHandler(openaiHandlers, claudeCodeHandlers))
 		v1.POST("/chat/completions", openaiHandlers.ChatCompletions)
 		v1.POST("/completions", openaiHandlers.Completions)
-		v1.POST("/messages", claudeCodeHandlers.ClaudeMessages)
-		v1.POST("/messages/count_tokens", claudeCodeHandlers.ClaudeCountTokens)
+		v1.POST("/messages", s.claudeCodeMappingHandler.Wrap(claudeCodeHandlers.ClaudeMessages))
+		v1.POST("/messages/count_tokens", s.claudeCodeMappingHandler.Wrap(claudeCodeHandlers.ClaudeCountTokens))
 		v1.POST("/responses", openaiResponsesHandlers.Responses)
 	}
 
@@ -593,6 +606,15 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.PUT("/ampcode/upstream-api-keys", s.mgmt.PutAmpUpstreamAPIKeys)
 		mgmt.PATCH("/ampcode/upstream-api-keys", s.mgmt.PatchAmpUpstreamAPIKeys)
 		mgmt.DELETE("/ampcode/upstream-api-keys", s.mgmt.DeleteAmpUpstreamAPIKeys)
+
+		mgmt.GET("/claudecode", s.mgmt.GetClaudeCode)
+		mgmt.GET("/claudecode/model-mappings", s.mgmt.GetClaudeCodeModelMappings)
+		mgmt.PUT("/claudecode/model-mappings", s.mgmt.PutClaudeCodeModelMappings)
+		mgmt.PATCH("/claudecode/model-mappings", s.mgmt.PatchClaudeCodeModelMappings)
+		mgmt.DELETE("/claudecode/model-mappings", s.mgmt.DeleteClaudeCodeModelMappings)
+		mgmt.GET("/claudecode/force-model-mappings", s.mgmt.GetClaudeCodeForceModelMappings)
+		mgmt.PUT("/claudecode/force-model-mappings", s.mgmt.PutClaudeCodeForceModelMappings)
+		mgmt.PATCH("/claudecode/force-model-mappings", s.mgmt.PutClaudeCodeForceModelMappings)
 
 		mgmt.GET("/request-retry", s.mgmt.GetRequestRetry)
 		mgmt.PUT("/request-retry", s.mgmt.PutRequestRetry)
@@ -1024,6 +1046,12 @@ func (s *Server) UpdateClients(cfg *config.Config) {
 		}
 	} else {
 		log.Warnf("amp module is nil, skipping config update")
+	}
+
+	// Update ClaudeCode model mapper on config changes
+	if s.claudeCodeMapper != nil {
+		log.Debugf("triggering claudecode model mapper config update")
+		s.claudeCodeMapper.UpdateMappings(cfg.ClaudeCode.ModelMappings)
 	}
 
 	// Count client sources from configuration and auth store.
