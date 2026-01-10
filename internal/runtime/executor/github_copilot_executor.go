@@ -88,8 +88,8 @@ func (e *GitHubCopilotExecutor) HttpRequest(ctx context.Context, auth *cliproxya
 		ctx = req.Context()
 	}
 	httpReq := req.WithContext(ctx)
-	if errPrepare := e.PrepareRequest(httpReq, auth); errPrepare != nil {
-		return nil, errPrepare
+	if err := e.PrepareRequest(httpReq, auth); err != nil {
+		return nil, err
 	}
 	httpClient := newProxyAwareHTTPClient(ctx, e.cfg, auth, 0)
 	return httpClient.Do(httpReq)
