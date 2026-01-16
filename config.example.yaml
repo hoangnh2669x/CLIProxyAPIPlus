@@ -90,6 +90,10 @@ nonstream-keepalive-interval: 0
 #   keepalive-seconds: 15   # Default: 0 (disabled). <= 0 disables keep-alives.
 #   bootstrap-retries: 1    # Default: 0 (disabled). Retries before first byte is sent.
 
+# When true, enable official Codex instructions injection for Codex API requests.
+# When false (default), CodexInstructionsForModel returns immediately without modification.
+codex-instructions-enabled: false
+
 # Gemini API keys
 # gemini-api-key:
 #   - api-key: "AIzaSy...01"
@@ -218,7 +222,7 @@ nonstream-keepalive-interval: 0
 
 # Global OAuth model name aliases (per channel)
 # These aliases rename model IDs for both model listing and request routing.
-# Supported channels: gemini-cli, vertex, aistudio, antigravity, claude, codex, qwen, iflow.
+# Supported channels: gemini-cli, vertex, aistudio, antigravity, claude, codex, qwen, iflow, kiro, github-copilot.
 # NOTE: Aliases do not apply to gemini-api-key, codex-api-key, claude-api-key, openai-compatibility, vertex-api-key, or ampcode.
 # You can repeat the same name with different aliases to expose multiple client model names.
 #oauth-model-alias:

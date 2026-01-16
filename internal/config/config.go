@@ -71,6 +71,11 @@ type Config struct {
 	// WebsocketAuth enables or disables authentication for the WebSocket API.
 	WebsocketAuth bool `yaml:"ws-auth" json:"ws-auth"`
 
+	// CodexInstructionsEnabled controls whether custom Codex instructions are injected.
+	// When false (default), CodexInstructionsForModel returns immediately without modification.
+	// When true, the original instruction injection logic is used.
+	CodexInstructionsEnabled bool `yaml:"codex-instructions-enabled" json:"codex-instructions-enabled"`
+
 	// GeminiKey defines Gemini API key configurations with optional routing overrides.
 	GeminiKey []GeminiKey `yaml:"gemini-api-key" json:"gemini-api-key"`
 
@@ -103,7 +108,7 @@ type Config struct {
 
 	// OAuthModelAlias defines global model name aliases for OAuth/file-backed auth channels.
 	// These aliases affect both model listing and model routing for supported channels:
-	// gemini-cli, vertex, aistudio, antigravity, claude, codex, qwen, iflow.
+	// gemini-cli, vertex, aistudio, antigravity, claude, codex, qwen, iflow, kiro, github-copilot.
 	//
 	// NOTE: This does not apply to existing per-credential model alias features under:
 	// gemini-api-key, codex-api-key, claude-api-key, openai-compatibility, vertex-api-key, and ampcode.
