@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v6/internal/thinking"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/util"
 	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
@@ -76,7 +77,8 @@ func (m *ClaudeCodeModelMapper) MapModel(requestedModel string) string {
 	targetModel, exists := m.mappings[normalizedRequest]
 	if !exists {
 		// Try regex mappings in order
-		base, _ := util.NormalizeThinkingModel(requestedModel)
+		suffixResult := thinking.ParseSuffix(requestedModel)
+		base := suffixResult.ModelName
 		for _, rm := range m.regexps {
 			if rm.re.MatchString(requestedModel) || (base != "" && rm.re.MatchString(base)) {
 				targetModel = rm.to
@@ -90,7 +92,8 @@ func (m *ClaudeCodeModelMapper) MapModel(requestedModel string) string {
 	}
 
 	// Verify target model has available providers
-	normalizedTarget, _ := util.NormalizeThinkingModel(targetModel)
+	targetSuffixResult := thinking.ParseSuffix(targetModel)
+	normalizedTarget := targetSuffixResult.ModelName
 	providers := util.GetProviderName(normalizedTarget)
 	if len(providers) == 0 {
 		log.Debugf("claudecode model mapping: target model %s has no available providers, skipping mapping", targetModel)
@@ -277,10 +280,11 @@ func (h *ModelMappingHandler) Wrap(handler gin.HandlerFunc) gin.HandlerFunc {
 		}).Infof("Claude CLI requesting model: %s", modelName)
 
 		// Normalize model (handles dynamic thinking suffixes)
-		normalizedModel, thinkingMetadata := util.NormalizeThinkingModel(modelName)
+		suffixResult := thinking.ParseSuffix(modelName)
+		normalizedModel := suffixResult.ModelName
 		thinkingSuffix := ""
-		if thinkingMetadata != nil && strings.HasPrefix(modelName, normalizedModel) {
-			thinkingSuffix = modelName[len(normalizedModel):]
+		if suffixResult.HasSuffix {
+			thinkingSuffix = "(" + suffixResult.RawSuffix + ")"
 		}
 
 		// Helper function to resolve mapped model
@@ -296,13 +300,14 @@ func (h *ModelMappingHandler) Wrap(handler gin.HandlerFunc) gin.HandlerFunc {
 
 			// Preserve dynamic thinking suffix when mapping applies
 			if thinkingSuffix != "" {
-				_, mappedThinkingMetadata := util.NormalizeThinkingModel(mappedModel)
-				if mappedThinkingMetadata == nil {
+				mappedSuffixResult := thinking.ParseSuffix(mappedModel)
+				if !mappedSuffixResult.HasSuffix {
 					mappedModel += thinkingSuffix
 				}
 			}
 
-			mappedBaseModel, _ := util.NormalizeThinkingModel(mappedModel)
+			mappedSuffixResult := thinking.ParseSuffix(mappedModel)
+			mappedBaseModel := mappedSuffixResult.ModelName
 			mappedProviders := util.GetProviderName(mappedBaseModel)
 			if len(mappedProviders) == 0 {
 				return "", nil
