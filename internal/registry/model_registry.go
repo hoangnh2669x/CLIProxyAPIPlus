@@ -47,10 +47,17 @@ type ModelInfo struct {
 	MaxCompletionTokens int `json:"max_completion_tokens,omitempty"`
 	// SupportedParameters lists supported parameters
 	SupportedParameters []string `json:"supported_parameters,omitempty"`
+	// SupportedEndpoints lists supported API endpoints (e.g., "/chat/completions", "/responses").
+	SupportedEndpoints []string `json:"supported_endpoints,omitempty"`
 
 	// Thinking holds provider-specific reasoning/thinking budget capabilities.
 	// This is optional and currently used for Gemini thinking budget normalization.
 	Thinking *ThinkingSupport `json:"thinking,omitempty"`
+
+	// UserDefined indicates this model was defined through config file's models[]
+	// array (e.g., openai-compatibility.*.models[], *-api-key.models[]).
+	// UserDefined models have thinking configuration passed through without validation.
+	UserDefined bool `json:"-"`
 }
 
 // ThinkingSupport describes a model family's supported internal reasoning budget range.
@@ -125,6 +132,21 @@ func GetGlobalRegistry() *ModelRegistry {
 		}
 	})
 	return globalRegistry
+}
+
+// LookupModelInfo searches the dynamic registry first, then falls back to static model definitions.
+//
+// This helper exists because some code paths only have a model ID and still need Thinking and
+// max completion token metadata even when the dynamic registry hasn't been populated.
+func LookupModelInfo(modelID string) *ModelInfo {
+	modelID = strings.TrimSpace(modelID)
+	if modelID == "" {
+		return nil
+	}
+	if info := GetGlobalRegistry().GetModelInfo(modelID); info != nil {
+		return info
+	}
+	return LookupStaticModelInfo(modelID)
 }
 
 // SetHook sets an optional hook for observing model registration changes.
@@ -455,6 +477,9 @@ func cloneModelInfo(model *ModelInfo) *ModelInfo {
 	}
 	if len(model.SupportedParameters) > 0 {
 		copyModel.SupportedParameters = append([]string(nil), model.SupportedParameters...)
+	}
+	if len(model.SupportedEndpoints) > 0 {
+		copyModel.SupportedEndpoints = append([]string(nil), model.SupportedEndpoints...)
 	}
 	return &copyModel
 }
@@ -967,6 +992,9 @@ func (r *ModelRegistry) convertModelToMap(model *ModelInfo, handlerType string) 
 		}
 		if len(model.SupportedParameters) > 0 {
 			result["supported_parameters"] = model.SupportedParameters
+		}
+		if len(model.SupportedEndpoints) > 0 {
+			result["supported_endpoints"] = model.SupportedEndpoints
 		}
 		return result
 
