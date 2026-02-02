@@ -29,7 +29,6 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/logging"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/managementasset"
-	"github.com/router-for-me/CLIProxyAPI/v6/internal/misc"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/quota"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/usage"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/util"
@@ -265,16 +264,6 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 	}
 	managementasset.SetCurrentConfig(cfg)
 	auth.SetQuotaCooldownDisabled(cfg.DisableCooling)
-	misc.SetCodexInstructionsEnabled(cfg.CodexInstructionsEnabled)
-
-	// Initialize quota system
-	if cfg.AuthDir != "" {
-		if err := quota.Initialize(cfg.AuthDir); err != nil {
-			log.Warnf("Failed to initialize quota system: %v", err)
-		}
-	}
-	// Load API key policies from config
-	quota.GetManager().LoadPolicies(&cfg.SDKConfig)
 
 	// Initialize management handler
 	s.mgmt = managementHandlers.NewHandler(cfg, configFilePath, authManager)
