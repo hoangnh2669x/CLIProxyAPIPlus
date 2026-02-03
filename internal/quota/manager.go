@@ -59,6 +59,30 @@ func (m *Manager) LoadPolicies(cfg *config.SDKConfig) {
 	log.Infof("Loaded %d API key policies", len(m.policies))
 }
 
+// SetPolicy sets a policy for an API key (used for dynamic policy management).
+func (m *Manager) SetPolicy(apiKey string, policy *Policy) {
+	if policy == nil {
+		return
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	policyCopy := *policy
+	m.policies[apiKey] = &policyCopy
+	log.Infof("Set policy for API key: %s (models: %v, max_tokens: %d, max_cost: %.2f, expires: %s)",
+		maskAPIKey(apiKey), policy.AllowedModels, policy.MaxTokens, policy.MaxCostUSD, policy.ExpiresAt)
+}
+
+// DeletePolicy removes a policy for an API key.
+func (m *Manager) DeletePolicy(apiKey string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	delete(m.policies, apiKey)
+	log.Infof("Deleted policy for API key: %s", maskAPIKey(apiKey))
+}
+
 // GetPolicy returns the policy for an API key.
 // Returns nil if no policy exists (meaning no restrictions).
 func (m *Manager) GetPolicy(apiKey string) *Policy {
@@ -209,20 +233,6 @@ func (m *Manager) AllPolicies() map[string]*Policy {
 		result[k] = &policyCopy
 	}
 	return result
-}
-
-// ResetUsage resets the usage for a specific API key.
-func (m *Manager) ResetUsage(apiKey string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	delete(m.usage, apiKey)
-}
-
-// ResetAllUsage resets all usage data.
-func (m *Manager) ResetAllUsage() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.usage = make(map[string]*QuotaUsage)
 }
 
 // GetQuotaStatus returns a summary of quota status for an API key.

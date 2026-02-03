@@ -561,6 +561,19 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.PUT("/quota-exceeded/switch-preview-model", s.mgmt.PutSwitchPreviewModel)
 		mgmt.PATCH("/quota-exceeded/switch-preview-model", s.mgmt.PutSwitchPreviewModel)
 
+		// Quota policy management endpoints
+		mgmt.GET("/quota/policies", s.mgmt.GetAllPolicies)
+		mgmt.GET("/quota/policies/:key", s.mgmt.GetPolicy)
+		mgmt.PUT("/quota/policies/:key", s.mgmt.PutPolicy)
+		mgmt.DELETE("/quota/policies/:key", s.mgmt.DeletePolicy)
+
+		// Quota usage management endpoints
+		mgmt.GET("/quota/usage", s.mgmt.GetAllUsage)
+		mgmt.GET("/quota/usage/:key", s.mgmt.GetUsageByKey)
+
+		// Quota status endpoint
+		mgmt.GET("/quota/status/:key", s.mgmt.GetQuotaStatus)
+
 		mgmt.GET("/api-keys", s.mgmt.GetAPIKeys)
 		mgmt.PUT("/api-keys", s.mgmt.PutAPIKeys)
 		mgmt.PATCH("/api-keys", s.mgmt.PatchAPIKeys)
