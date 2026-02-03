@@ -21,6 +21,7 @@ var (
 	persistencePath string
 	stopAutoSave    chan struct{}
 	autoSaveRunning bool
+	gitCommitFunc   func(message, relPath string) error // Function to commit to git
 )
 
 // persistedUsageData is the JSON structure saved to disk.
@@ -28,6 +29,14 @@ type persistedUsageData struct {
 	Usage     map[string]*QuotaUsage `json:"usage"`
 	LastSaved time.Time              `json:"last_saved"`
 	Version   int                    `json:"version"`
+}
+
+// SetGitCommitFunc sets the function to commit changes to git.
+// This should be called during initialization if gitstore is enabled.
+func SetGitCommitFunc(fn func(message, relPath string) error) {
+	persistenceMu.Lock()
+	defer persistenceMu.Unlock()
+	gitCommitFunc = fn
 }
 
 // SetPersistencePath configures the directory where quota_usage.json will be stored.

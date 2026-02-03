@@ -265,6 +265,15 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 	managementasset.SetCurrentConfig(cfg)
 	auth.SetQuotaCooldownDisabled(cfg.DisableCooling)
 
+	// Initialize quota system
+	if cfg.AuthDir != "" {
+		if err := quota.Initialize(cfg.AuthDir); err != nil {
+			log.Warnf("Failed to initialize quota system: %v", err)
+		}
+	}
+	// Load API key policies from config
+	quota.GetManager().LoadPolicies(&cfg.SDKConfig)
+
 	// Initialize management handler
 	s.mgmt = managementHandlers.NewHandler(cfg, configFilePath, authManager)
 	if optionState.localPassword != "" {
