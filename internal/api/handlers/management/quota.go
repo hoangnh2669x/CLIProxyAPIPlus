@@ -28,16 +28,9 @@ func (h *Handler) GetAllPolicies(c *gin.Context) {
 	manager := quota.GetManager()
 	policies := manager.AllPolicies()
 
-	// Mask API keys for security
-	maskedPolicies := make(map[string]*quota.Policy)
-	for key, policy := range policies {
-		maskedKey := maskAPIKey(key)
-		maskedPolicies[maskedKey] = policy
-	}
-
 	c.JSON(http.StatusOK, gin.H{
-		"policies": maskedPolicies,
-		"count":    len(maskedPolicies),
+		"policies": policies,
+		"count":    len(policies),
 	})
 }
 
@@ -58,7 +51,7 @@ func (h *Handler) GetPolicy(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"api_key": maskAPIKey(apiKey),
+		"api_key": apiKey,
 		"policy":  policy,
 	})
 }
@@ -104,7 +97,7 @@ func (h *Handler) PutPolicy(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Policy created/updated successfully",
-		"api_key": maskAPIKey(apiKey),
+		"api_key": apiKey,
 		"policy":  policy,
 	})
 }
@@ -143,7 +136,7 @@ func (h *Handler) DeletePolicy(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Policy deleted successfully",
-		"api_key": maskAPIKey(apiKey),
+		"api_key": apiKey,
 	})
 }
 
@@ -166,18 +159,9 @@ func (h *Handler) GetAllUsage(c *gin.Context) {
 	manager := quota.GetManager()
 	allUsage := manager.AllUsage()
 
-	// Mask API keys for security
-	maskedUsage := make(map[string]*quota.QuotaUsage)
-	for key, usage := range allUsage {
-		maskedKey := maskAPIKey(key)
-		usageCopy := *usage
-		usageCopy.APIKey = maskedKey
-		maskedUsage[maskedKey] = &usageCopy
-	}
-
 	c.JSON(http.StatusOK, gin.H{
-		"usage": maskedUsage,
-		"count": len(maskedUsage),
+		"usage": allUsage,
+		"count": len(allUsage),
 	})
 }
 
@@ -197,18 +181,7 @@ func (h *Handler) GetUsageByKey(c *gin.Context) {
 		return
 	}
 
-	usageCopy := *usage
-	usageCopy.APIKey = maskAPIKey(apiKey)
-
 	c.JSON(http.StatusOK, gin.H{
-		"usage": &usageCopy,
+		"usage": usage,
 	})
-}
-
-// maskAPIKey masks an API key for security (shows first 8 and last 4 chars)
-func maskAPIKey(key string) string {
-	if len(key) <= 12 {
-		return "***"
-	}
-	return key[:8] + "..." + key[len(key)-4:]
 }
