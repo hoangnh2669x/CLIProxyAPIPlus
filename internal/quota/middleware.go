@@ -28,6 +28,15 @@ func Middleware(manager *Manager) gin.HandlerFunc {
 			return
 		}
 
+		// Allow model listing endpoints even when quota exceeded
+		if c.Request.Method == http.MethodGet {
+			path := c.Request.URL.Path
+			if path == "/v1/models" || path == "/v1beta/models" {
+				c.Next()
+				return
+			}
+		}
+
 		// Get API key from context (set by AuthMiddleware)
 		apiKey, exists := c.Get(ContextKeyAPIKey)
 		if !exists || apiKey == nil {
