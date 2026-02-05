@@ -155,20 +155,6 @@ func requestExecutionMetadata(ctx context.Context) map[string]any {
 	return map[string]any{idempotencyKeyMetadataKey: key}
 }
 
-func mergeMetadata(base, overlay map[string]any) map[string]any {
-	if len(base) == 0 && len(overlay) == 0 {
-		return nil
-	}
-	out := make(map[string]any, len(base)+len(overlay))
-	for k, v := range base {
-		out[k] = v
-	}
-	for k, v := range overlay {
-		out[k] = v
-	}
-	return out
-}
-
 // BaseAPIHandler contains the handlers for API endpoints.
 // It holds a pool of clients to interact with the backend service and manages
 // load balancing, client selection, and configuration.
@@ -392,14 +378,18 @@ func (h *BaseAPIHandler) ExecuteWithAuthManager(ctx context.Context, handlerType
 	}
 	reqMeta := requestExecutionMetadata(ctx)
 	reqMeta[coreexecutor.RequestedModelMetadataKey] = normalizedModel
+	payload := rawJSON
+	if len(payload) == 0 {
+		payload = nil
+	}
 	req := coreexecutor.Request{
 		Model:   normalizedModel,
-		Payload: cloneBytes(rawJSON),
+		Payload: payload,
 	}
 	opts := coreexecutor.Options{
 		Stream:          false,
 		Alt:             alt,
-		OriginalRequest: cloneBytes(rawJSON),
+		OriginalRequest: rawJSON,
 		SourceFormat:    sdktranslator.FromString(handlerType),
 	}
 	opts.Metadata = reqMeta
@@ -431,14 +421,18 @@ func (h *BaseAPIHandler) ExecuteCountWithAuthManager(ctx context.Context, handle
 	}
 	reqMeta := requestExecutionMetadata(ctx)
 	reqMeta[coreexecutor.RequestedModelMetadataKey] = normalizedModel
+	payload := rawJSON
+	if len(payload) == 0 {
+		payload = nil
+	}
 	req := coreexecutor.Request{
 		Model:   normalizedModel,
-		Payload: cloneBytes(rawJSON),
+		Payload: payload,
 	}
 	opts := coreexecutor.Options{
 		Stream:          false,
 		Alt:             alt,
-		OriginalRequest: cloneBytes(rawJSON),
+		OriginalRequest: rawJSON,
 		SourceFormat:    sdktranslator.FromString(handlerType),
 	}
 	opts.Metadata = reqMeta
@@ -473,14 +467,18 @@ func (h *BaseAPIHandler) ExecuteStreamWithAuthManager(ctx context.Context, handl
 	}
 	reqMeta := requestExecutionMetadata(ctx)
 	reqMeta[coreexecutor.RequestedModelMetadataKey] = normalizedModel
+	payload := rawJSON
+	if len(payload) == 0 {
+		payload = nil
+	}
 	req := coreexecutor.Request{
 		Model:   normalizedModel,
-		Payload: cloneBytes(rawJSON),
+		Payload: payload,
 	}
 	opts := coreexecutor.Options{
 		Stream:          true,
 		Alt:             alt,
-		OriginalRequest: cloneBytes(rawJSON),
+		OriginalRequest: rawJSON,
 		SourceFormat:    sdktranslator.FromString(handlerType),
 	}
 	opts.Metadata = reqMeta
@@ -666,17 +664,6 @@ func cloneBytes(src []byte) []byte {
 	}
 	dst := make([]byte, len(src))
 	copy(dst, src)
-	return dst
-}
-
-func cloneMetadata(src map[string]any) map[string]any {
-	if len(src) == 0 {
-		return nil
-	}
-	dst := make(map[string]any, len(src))
-	for k, v := range src {
-		dst[k] = v
-	}
 	return dst
 }
 
