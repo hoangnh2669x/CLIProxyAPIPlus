@@ -97,6 +97,10 @@ type Config struct {
 	// ClaudeKey defines a list of Claude API key configurations as specified in the YAML configuration file.
 	ClaudeKey []ClaudeKey `yaml:"claude-api-key" json:"claude-api-key"`
 
+	// ClaudeHeaderDefaults configures default header values for Claude API requests.
+	// These are used as fallbacks when the client does not send its own headers.
+	ClaudeHeaderDefaults ClaudeHeaderDefaults `yaml:"claude-header-defaults" json:"claude-header-defaults"`
+
 	// OpenAICompatibility defines OpenAI API compatibility configurations for external providers.
 	OpenAICompatibility []OpenAICompatibility `yaml:"openai-compatibility" json:"openai-compatibility"`
 
@@ -131,6 +135,15 @@ type Config struct {
 	IncognitoBrowser bool `yaml:"incognito-browser" json:"incognito-browser"`
 
 	legacyMigrationPending bool `yaml:"-" json:"-"`
+}
+
+// ClaudeHeaderDefaults configures default header values injected into Claude API requests
+// when the client does not send them. Update these when Claude Code releases a new version.
+type ClaudeHeaderDefaults struct {
+	UserAgent      string `yaml:"user-agent" json:"user-agent"`
+	PackageVersion string `yaml:"package-version" json:"package-version"`
+	RuntimeVersion string `yaml:"runtime-version" json:"runtime-version"`
+	Timeout        string `yaml:"timeout" json:"timeout"`
 }
 
 // TLSConfig holds HTTPS server settings.
@@ -316,6 +329,10 @@ type CloakConfig struct {
 	// SensitiveWords is a list of words to obfuscate with zero-width characters.
 	// This can help bypass certain content filters.
 	SensitiveWords []string `yaml:"sensitive-words,omitempty" json:"sensitive-words,omitempty"`
+
+	// CacheUserID controls whether Claude user_id values are cached per API key.
+	// When false, a fresh random user_id is generated for every request.
+	CacheUserID *bool `yaml:"cache-user-id,omitempty" json:"cache-user-id,omitempty"`
 }
 
 // ClaudeKey represents the configuration for a Claude API key,
@@ -382,6 +399,9 @@ type CodexKey struct {
 	// BaseURL is the base URL for the Codex API endpoint.
 	// If empty, the default Codex API URL will be used.
 	BaseURL string `yaml:"base-url" json:"base-url"`
+
+	// Websockets enables the Responses API websocket transport for this credential.
+	Websockets bool `yaml:"websockets,omitempty" json:"websockets,omitempty"`
 
 	// ProxyURL overrides the global proxy setting for this API key if provided.
 	ProxyURL string `yaml:"proxy-url" json:"proxy-url"`
@@ -758,22 +778,24 @@ func (cfg *Config) SanitizeOAuthModelAlias() {
 		return
 	}
 
-	// Inject default Kiro aliases if no user-configured kiro aliases exist
+	// Inject channel defaults when the channel is absent in user config.
+	// Presence is checked case-insensitively and includes explicit nil/empty markers.
 	if cfg.OAuthModelAlias == nil {
 		cfg.OAuthModelAlias = make(map[string][]OAuthModelAlias)
 	}
-	if _, hasKiro := cfg.OAuthModelAlias["kiro"]; !hasKiro {
-		// Check case-insensitive too
-		found := false
+	hasChannel := func(channel string) bool {
 		for k := range cfg.OAuthModelAlias {
-			if strings.EqualFold(strings.TrimSpace(k), "kiro") {
-				found = true
-				break
+			if strings.EqualFold(strings.TrimSpace(k), channel) {
+				return true
 			}
 		}
-		if !found {
-			cfg.OAuthModelAlias["kiro"] = defaultKiroAliases()
-		}
+		return false
+	}
+	if !hasChannel("kiro") {
+		cfg.OAuthModelAlias["kiro"] = defaultKiroAliases()
+	}
+	if !hasChannel("github-copilot") {
+		cfg.OAuthModelAlias["github-copilot"] = defaultGitHubCopilotAliases()
 	}
 
 	if len(cfg.OAuthModelAlias) == 0 {
