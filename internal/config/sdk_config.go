@@ -24,6 +24,10 @@ type SDKConfig struct {
 	// Keys not listed here have no restrictions.
 	APIKeyPolicies map[string]APIKeyPolicy `yaml:"api-key-policies,omitempty" json:"api-key-policies,omitempty"`
 
+	// PassthroughHeaders controls whether upstream response headers are forwarded to downstream clients.
+	// Default is false (disabled).
+	PassthroughHeaders bool `yaml:"passthrough-headers" json:"passthrough-headers"`
+
 	// Streaming configures server-side streaming behavior (keep-alives and safe bootstrap retries).
 	Streaming StreamingConfig `yaml:"streaming" json:"streaming"`
 
