@@ -36,10 +36,12 @@ type KiroInferenceConfig struct {
 
 // KiroConversationState holds the conversation context
 type KiroConversationState struct {
-	ChatTriggerType string               `json:"chatTriggerType"` // Required: "MANUAL"
-	ConversationID  string               `json:"conversationId"`
-	CurrentMessage  KiroCurrentMessage   `json:"currentMessage"`
-	History         []KiroHistoryMessage `json:"history,omitempty"`
+	AgentContinuationID string               `json:"agentContinuationId,omitempty"`
+	AgentTaskType       string               `json:"agentTaskType,omitempty"`
+	ChatTriggerType     string               `json:"chatTriggerType"` // Required: "MANUAL"
+	ConversationID      string               `json:"conversationId"`
+	CurrentMessage      KiroCurrentMessage   `json:"currentMessage"`
+	History             []KiroHistoryMessage `json:"history,omitempty"`
 }
 
 // KiroCurrentMessage wraps the current user message
@@ -234,16 +236,16 @@ func BuildKiroPayloadFromOpenAI(openaiBody []byte, modelID, profileArn, origin s
 	// Kiro API supports official thinking/reasoning mode via <thinking_mode> tag.
 	// When set to "enabled", Kiro returns reasoning content as official reasoningContentEvent
 	// rather than inline <thinking> tags in assistantResponseEvent.
-	// We use a high max_thinking_length to allow extensive reasoning.
+	// Use a conservative thinking budget to reduce latency/cost spikes in long sessions.
 	if thinkingEnabled {
 		thinkingHint := `<thinking_mode>enabled</thinking_mode>
-<max_thinking_length>200000</max_thinking_length>`
+<max_thinking_length>16000</max_thinking_length>`
 		if systemPrompt != "" {
 			systemPrompt = thinkingHint + "\n\n" + systemPrompt
 		} else {
 			systemPrompt = thinkingHint
 		}
-		log.Debugf("kiro-openai: injected thinking prompt (official mode)")
+		log.Infof("kiro-openai: injected thinking prompt (official mode), has_tools: %v", len(kiroTools) > 0)
 	}
 
 	// Process messages and build history
@@ -297,15 +299,28 @@ func BuildKiroPayloadFromOpenAI(openaiBody []byte, modelID, profileArn, origin s
 		}
 	}
 
+	// Session IDs: extract from messages[].additional_kwargs (LangChain format) or random
+	conversationID := extractMetadataFromMessages(messages, "conversationId")
+	continuationID := extractMetadataFromMessages(messages, "continuationId")
+	if conversationID == "" {
+		conversationID = uuid.New().String()
+	}
+
 	payload := KiroPayload{
 		ConversationState: KiroConversationState{
+			AgentTaskType:   "vibe",
 			ChatTriggerType: "MANUAL",
-			ConversationID:  uuid.New().String(),
+			ConversationID:  conversationID,
 			CurrentMessage:  currentMessage,
 			History:         history,
 		},
 		ProfileArn:      profileArn,
 		InferenceConfig: inferenceConfig,
+	}
+
+	// Only set AgentContinuationID if client provided
+	if continuationID != "" {
+		payload.ConversationState.AgentContinuationID = continuationID
 	}
 
 	result, err := json.Marshal(payload)
@@ -331,6 +346,18 @@ func normalizeOrigin(origin string) string {
 	default:
 		return origin
 	}
+}
+
+// extractMetadataFromMessages extracts metadata from messages[].additional_kwargs (LangChain format).
+// Searches from the last message backwards, returns empty string if not found.
+func extractMetadataFromMessages(messages gjson.Result, key string) string {
+	arr := messages.Array()
+	for i := len(arr) - 1; i >= 0; i-- {
+		if val := arr[i].Get("additional_kwargs." + key); val.Exists() && val.String() != "" {
+			return val.String()
+		}
+	}
+	return ""
 }
 
 // extractSystemPromptFromOpenAI extracts system prompt from OpenAI messages
@@ -576,7 +603,77 @@ func processOpenAIMessages(messages gjson.Result, modelID, origin string) ([]Kir
 		}
 	}
 
+	// Truncate history if too long to prevent Kiro API errors
+	history = truncateHistoryIfNeeded(history)
+	history, currentToolResults = filterOrphanedToolResults(history, currentToolResults)
+
 	return history, currentUserMsg, currentToolResults
+}
+
+const kiroMaxHistoryMessages = 50
+
+func truncateHistoryIfNeeded(history []KiroHistoryMessage) []KiroHistoryMessage {
+	if len(history) <= kiroMaxHistoryMessages {
+		return history
+	}
+
+	log.Debugf("kiro-openai: truncating history from %d to %d messages", len(history), kiroMaxHistoryMessages)
+	return history[len(history)-kiroMaxHistoryMessages:]
+}
+
+func filterOrphanedToolResults(history []KiroHistoryMessage, currentToolResults []KiroToolResult) ([]KiroHistoryMessage, []KiroToolResult) {
+	// Remove tool results with no matching tool_use in retained history.
+	// This happens after truncation when the assistant turn that produced tool_use
+	// is dropped but a later user/tool_result survives.
+	validToolUseIDs := make(map[string]bool)
+	for _, h := range history {
+		if h.AssistantResponseMessage == nil {
+			continue
+		}
+		for _, tu := range h.AssistantResponseMessage.ToolUses {
+			validToolUseIDs[tu.ToolUseID] = true
+		}
+	}
+
+	for i, h := range history {
+		if h.UserInputMessage == nil || h.UserInputMessage.UserInputMessageContext == nil {
+			continue
+		}
+		ctx := h.UserInputMessage.UserInputMessageContext
+		if len(ctx.ToolResults) == 0 {
+			continue
+		}
+
+		filtered := make([]KiroToolResult, 0, len(ctx.ToolResults))
+		for _, tr := range ctx.ToolResults {
+			if validToolUseIDs[tr.ToolUseID] {
+				filtered = append(filtered, tr)
+				continue
+			}
+			log.Debugf("kiro-openai: dropping orphaned tool_result in history[%d]: toolUseId=%s (no matching tool_use)", i, tr.ToolUseID)
+		}
+		ctx.ToolResults = filtered
+		if len(ctx.ToolResults) == 0 && len(ctx.Tools) == 0 {
+			h.UserInputMessage.UserInputMessageContext = nil
+		}
+	}
+
+	if len(currentToolResults) > 0 {
+		filtered := make([]KiroToolResult, 0, len(currentToolResults))
+		for _, tr := range currentToolResults {
+			if validToolUseIDs[tr.ToolUseID] {
+				filtered = append(filtered, tr)
+				continue
+			}
+			log.Debugf("kiro-openai: dropping orphaned tool_result in currentMessage: toolUseId=%s (no matching tool_use)", tr.ToolUseID)
+		}
+		if len(filtered) != len(currentToolResults) {
+			log.Infof("kiro-openai: dropped %d orphaned tool_result(s) from currentMessage", len(currentToolResults)-len(filtered))
+		}
+		currentToolResults = filtered
+	}
+
+	return history, currentToolResults
 }
 
 // buildUserMessageFromOpenAI builds a user message from OpenAI format and extracts tool results
@@ -645,13 +742,36 @@ func buildAssistantMessageFromOpenAI(msg gjson.Result) KiroAssistantResponseMess
 		contentBuilder.WriteString(content.String())
 	} else if content.IsArray() {
 		for _, part := range content.Array() {
-			if part.Get("type").String() == "text" {
+			partType := part.Get("type").String()
+			switch partType {
+			case "text":
 				contentBuilder.WriteString(part.Get("text").String())
+			case "tool_use":
+				// Handle tool_use in content array (Anthropic/OpenCode format)
+				// This is different from OpenAI's tool_calls format
+				toolUseID := part.Get("id").String()
+				toolName := part.Get("name").String()
+				inputData := part.Get("input")
+
+				inputMap := make(map[string]interface{})
+				if inputData.Exists() && inputData.IsObject() {
+					inputData.ForEach(func(key, value gjson.Result) bool {
+						inputMap[key.String()] = value.Value()
+						return true
+					})
+				}
+
+				toolUses = append(toolUses, KiroToolUse{
+					ToolUseID: toolUseID,
+					Name:      toolName,
+					Input:     inputMap,
+				})
+				log.Debugf("kiro-openai: extracted tool_use from content array: %s", toolName)
 			}
 		}
 	}
 
-	// Handle tool_calls
+	// Handle tool_calls (OpenAI format)
 	toolCalls := msg.Get("tool_calls")
 	if toolCalls.IsArray() {
 		for _, tc := range toolCalls.Array() {
@@ -677,8 +797,20 @@ func buildAssistantMessageFromOpenAI(msg gjson.Result) KiroAssistantResponseMess
 		}
 	}
 
+	// CRITICAL FIX: Kiro API requires non-empty content for assistant messages
+	// This can happen with compaction requests or error recovery scenarios
+	finalContent := contentBuilder.String()
+	if strings.TrimSpace(finalContent) == "" {
+		if len(toolUses) > 0 {
+			finalContent = kirocommon.DefaultAssistantContentWithTools
+		} else {
+			finalContent = kirocommon.DefaultAssistantContent
+		}
+		log.Debugf("kiro-openai: assistant content was empty, using default: %s", finalContent)
+	}
+
 	return KiroAssistantResponseMessage{
-		Content:  contentBuilder.String(),
+		Content:  finalContent,
 		ToolUses: toolUses,
 	}
 }
@@ -781,7 +913,6 @@ func hasThinkingTagInBody(body []byte) bool {
 	bodyStr := string(body)
 	return strings.Contains(bodyStr, "<thinking_mode>") || strings.Contains(bodyStr, "<max_thinking_length>")
 }
-
 
 // extractToolChoiceHint extracts tool_choice from OpenAI request and returns a system prompt hint.
 // OpenAI tool_choice values:

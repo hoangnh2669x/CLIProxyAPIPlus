@@ -10,22 +10,58 @@ The Plus release stays in lockstep with the mainline features.
 
 ## Differences from the Mainline
 
-- Added GitHub Copilot support (OAuth login), provided by [em4go](https://github.com/em4go/CLIProxyAPI/tree/feature/github-copilot-auth)
-- Added Kiro (AWS CodeWhisperer) support (OAuth login), provided by [fuko2935](https://github.com/fuko2935/CLIProxyAPI/tree/feature/kiro-integration), [Ravens2121](https://github.com/Ravens2121/CLIProxyAPIPlus/)
+[![z.ai](https://assets.router-for.me/english-5-0.jpg)](https://z.ai/subscribe?ic=8JVLJQFSKB)
 
 ## New Features (Plus Enhanced)
 
-- **OAuth Web Authentication**: Browser-based OAuth login for Kiro with beautiful web UI
-- **Rate Limiter**: Built-in request rate limiting to prevent API abuse
-- **Background Token Refresh**: Automatic token refresh 10 minutes before expiration
-- **Metrics & Monitoring**: Request metrics collection for monitoring and debugging
-- **Device Fingerprint**: Device fingerprint generation for enhanced security
-- **Cooldown Management**: Smart cooldown mechanism for API rate limits
-- **Usage Checker**: Real-time usage monitoring and quota management
-- **Model Converter**: Unified model name conversion across providers
-- **UTF-8 Stream Processing**: Improved streaming response handling
+GLM CODING PLAN is a subscription service designed for AI coding, starting at just $10/month. It provides access to their flagship GLM-4.7 & （GLM-5 Only Available  for Pro Users）model across 10+ popular AI coding tools (Claude Code, Cline, Roo Code, etc.), offering developers top-tier, fast, and stable coding experiences.
 
 ## Kiro Authentication
+
+### CLI Login
+
+> **Note:** Google/GitHub login is not available for third-party applications due to AWS Cognito restrictions.
+
+**AWS Builder ID** (recommended):
+
+```bash
+# Device code flow
+./CLIProxyAPI --kiro-aws-login
+
+# Authorization code flow
+./CLIProxyAPI --kiro-aws-authcode
+```
+
+**Import token from Kiro IDE:**
+
+```bash
+./CLIProxyAPI --kiro-import
+```
+
+To get a token from Kiro IDE:
+
+1. Open Kiro IDE and login with Google (or GitHub)
+2. Find the token file: `~/.kiro/kiro-auth-token.json`
+3. Run: `./CLIProxyAPI --kiro-import`
+
+**AWS IAM Identity Center (IDC):**
+
+```bash
+./CLIProxyAPI --kiro-idc-login --kiro-idc-start-url https://d-xxxxxxxxxx.awsapps.com/start
+
+# Specify region
+./CLIProxyAPI --kiro-idc-login --kiro-idc-start-url https://d-xxxxxxxxxx.awsapps.com/start --kiro-idc-region us-west-2
+```
+
+**Additional flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--no-browser` | Don't open browser automatically, print URL instead |
+| `--no-incognito` | Use existing browser session (Kiro defaults to incognito). Useful for corporate SSO that requires an authenticated browser session |
+| `--kiro-idc-start-url` | IDC Start URL (required with `--kiro-idc-login`) |
+| `--kiro-idc-region` | IDC region (default: `us-east-1`) |
+| `--kiro-idc-flow` | IDC flow type: `authcode` (default) or `device` |
 
 ### Web-based OAuth Login
 

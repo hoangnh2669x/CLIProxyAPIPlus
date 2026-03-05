@@ -3,7 +3,6 @@
 package chat_completions
 
 import (
-	"bytes"
 	"fmt"
 	"strings"
 
@@ -28,12 +27,17 @@ const geminiFunctionThoughtSignature = "skip_thought_signature_validator"
 // Returns:
 //   - []byte: The transformed request data in Gemini API format
 func ConvertOpenAIRequestToGemini(modelName string, inputRawJSON []byte, _ bool) []byte {
-	rawJSON := bytes.Clone(inputRawJSON)
+	rawJSON := inputRawJSON
 	// Base envelope (no default thinkingConfig)
 	out := []byte(`{"contents":[]}`)
 
 	// Model
 	out, _ = sjson.SetBytes(out, "model", modelName)
+
+	// Let user-provided generationConfig pass through
+	if genConfig := gjson.GetBytes(rawJSON, "generationConfig"); genConfig.Exists() {
+		out, _ = sjson.SetRawBytes(out, "generationConfig", []byte(genConfig.Raw))
+	}
 
 	// Apply thinking configuration: convert OpenAI reasoning_effort to Gemini thinkingConfig.
 	// Inline translation-only mapping; capability checks happen later in ApplyThinking.

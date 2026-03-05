@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/url"
 	"os"
@@ -26,6 +27,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/misc"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/store"
 	_ "github.com/router-for-me/CLIProxyAPI/v6/internal/translator"
+	"github.com/router-for-me/CLIProxyAPI/v6/internal/tui"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/usage"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/util"
 	sdkAuth "github.com/router-for-me/CLIProxyAPI/v6/sdk/auth"
@@ -70,31 +72,42 @@ func main() {
 	// Command-line flags to control the application's behavior.
 	var login bool
 	var codexLogin bool
+	var codexDeviceLogin bool
 	var claudeLogin bool
 	var qwenLogin bool
+	var kiloLogin bool
 	var iflowLogin bool
 	var iflowCookie bool
 	var noBrowser bool
 	var oauthCallbackPort int
 	var antigravityLogin bool
+	var kimiLogin bool
 	var kiroLogin bool
 	var kiroGoogleLogin bool
 	var kiroAWSLogin bool
 	var kiroAWSAuthCode bool
 	var kiroImport bool
+	var kiroIDCLogin bool
+	var kiroIDCStartURL string
+	var kiroIDCRegion string
+	var kiroIDCFlow string
 	var githubCopilotLogin bool
 	var projectID string
 	var vertexImport string
 	var configPath string
 	var password string
+	var tuiMode bool
+	var standalone bool
 	var noIncognito bool
 	var useIncognito bool
 
 	// Define command-line flags for different operation modes.
 	flag.BoolVar(&login, "login", false, "Login Google Account")
 	flag.BoolVar(&codexLogin, "codex-login", false, "Login to Codex using OAuth")
+	flag.BoolVar(&codexDeviceLogin, "codex-device-login", false, "Login to Codex using device code flow")
 	flag.BoolVar(&claudeLogin, "claude-login", false, "Login to Claude using OAuth")
 	flag.BoolVar(&qwenLogin, "qwen-login", false, "Login to Qwen using OAuth")
+	flag.BoolVar(&kiloLogin, "kilo-login", false, "Login to Kilo AI using device flow")
 	flag.BoolVar(&iflowLogin, "iflow-login", false, "Login to iFlow using OAuth")
 	flag.BoolVar(&iflowCookie, "iflow-cookie", false, "Login to iFlow using Cookie")
 	flag.BoolVar(&noBrowser, "no-browser", false, "Don't open browser automatically for OAuth")
@@ -102,16 +115,23 @@ func main() {
 	flag.BoolVar(&useIncognito, "incognito", false, "Open browser in incognito/private mode for OAuth (useful for multiple accounts)")
 	flag.BoolVar(&noIncognito, "no-incognito", false, "Force disable incognito mode (uses existing browser session)")
 	flag.BoolVar(&antigravityLogin, "antigravity-login", false, "Login to Antigravity using OAuth")
+	flag.BoolVar(&kimiLogin, "kimi-login", false, "Login to Kimi using OAuth")
 	flag.BoolVar(&kiroLogin, "kiro-login", false, "Login to Kiro using Google OAuth")
 	flag.BoolVar(&kiroGoogleLogin, "kiro-google-login", false, "Login to Kiro using Google OAuth (same as --kiro-login)")
 	flag.BoolVar(&kiroAWSLogin, "kiro-aws-login", false, "Login to Kiro using AWS Builder ID (device code flow)")
 	flag.BoolVar(&kiroAWSAuthCode, "kiro-aws-authcode", false, "Login to Kiro using AWS Builder ID (authorization code flow, better UX)")
 	flag.BoolVar(&kiroImport, "kiro-import", false, "Import Kiro token from Kiro IDE (~/.aws/sso/cache/kiro-auth-token.json)")
+	flag.BoolVar(&kiroIDCLogin, "kiro-idc-login", false, "Login to Kiro using IAM Identity Center (IDC)")
+	flag.StringVar(&kiroIDCStartURL, "kiro-idc-start-url", "", "IDC start URL (required with --kiro-idc-login)")
+	flag.StringVar(&kiroIDCRegion, "kiro-idc-region", "", "IDC region (default: us-east-1)")
+	flag.StringVar(&kiroIDCFlow, "kiro-idc-flow", "", "IDC flow type: authcode (default) or device")
 	flag.BoolVar(&githubCopilotLogin, "github-copilot-login", false, "Login to GitHub Copilot using device flow")
 	flag.StringVar(&projectID, "project_id", "", "Project ID (Gemini only, not required)")
 	flag.StringVar(&configPath, "config", DefaultConfigPath, "Configure File Path")
 	flag.StringVar(&vertexImport, "vertex-import", "", "Import Vertex service account key JSON file")
 	flag.StringVar(&password, "password", "", "")
+	flag.BoolVar(&tuiMode, "tui", false, "Start with terminal management UI")
+	flag.BoolVar(&standalone, "standalone", false, "In TUI mode, start an embedded local server")
 
 	flag.CommandLine.Usage = func() {
 		out := flag.CommandLine.Output()
@@ -487,7 +507,7 @@ func main() {
 	}
 
 	// Register built-in access providers before constructing services.
-	configaccess.Register()
+	configaccess.Register(&cfg.SDKConfig)
 
 	// Handle different command modes based on the provided flags.
 
@@ -506,39 +526,56 @@ func main() {
 	} else if codexLogin {
 		// Handle Codex login
 		cmd.DoCodexLogin(cfg, options)
+	} else if codexDeviceLogin {
+		// Handle Codex device-code login
+		cmd.DoCodexDeviceLogin(cfg, options)
 	} else if claudeLogin {
 		// Handle Claude login
 		cmd.DoClaudeLogin(cfg, options)
 	} else if qwenLogin {
 		cmd.DoQwenLogin(cfg, options)
+	} else if kiloLogin {
+		cmd.DoKiloLogin(cfg, options)
 	} else if iflowLogin {
 		cmd.DoIFlowLogin(cfg, options)
 	} else if iflowCookie {
 		cmd.DoIFlowCookieAuth(cfg, options)
+	} else if kimiLogin {
+		cmd.DoKimiLogin(cfg, options)
 	} else if kiroLogin {
 		// For Kiro auth, default to incognito mode for multi-account support
 		// Users can explicitly override with --no-incognito
 		// Note: This config mutation is safe - auth commands exit after completion
 		// and don't share config with StartService (which is in the else branch)
 		setKiroIncognitoMode(cfg, useIncognito, noIncognito)
+		kiro.InitFingerprintConfig(cfg)
 		cmd.DoKiroLogin(cfg, options)
 	} else if kiroGoogleLogin {
 		// For Kiro auth, default to incognito mode for multi-account support
 		// Users can explicitly override with --no-incognito
 		// Note: This config mutation is safe - auth commands exit after completion
 		setKiroIncognitoMode(cfg, useIncognito, noIncognito)
+		kiro.InitFingerprintConfig(cfg)
 		cmd.DoKiroGoogleLogin(cfg, options)
 	} else if kiroAWSLogin {
 		// For Kiro auth, default to incognito mode for multi-account support
 		// Users can explicitly override with --no-incognito
 		setKiroIncognitoMode(cfg, useIncognito, noIncognito)
+		kiro.InitFingerprintConfig(cfg)
 		cmd.DoKiroAWSLogin(cfg, options)
 	} else if kiroAWSAuthCode {
 		// For Kiro auth with authorization code flow (better UX)
 		setKiroIncognitoMode(cfg, useIncognito, noIncognito)
+		kiro.InitFingerprintConfig(cfg)
 		cmd.DoKiroAWSAuthCodeLogin(cfg, options)
 	} else if kiroImport {
+		kiro.InitFingerprintConfig(cfg)
 		cmd.DoKiroImport(cfg, options)
+	} else if kiroIDCLogin {
+		// For Kiro IDC auth, default to incognito mode for multi-account support
+		setKiroIncognitoMode(cfg, useIncognito, noIncognito)
+		kiro.InitFingerprintConfig(cfg)
+		cmd.DoKiroIDCLogin(cfg, options, kiroIDCStartURL, kiroIDCRegion, kiroIDCFlow)
 	} else {
 		// In cloud deploy mode without config file, just wait for shutdown signals
 		if isCloudDeploy && !configFileExists {
@@ -546,15 +583,89 @@ func main() {
 			cmd.WaitForCloudDeploy()
 			return
 		}
-		// Start the main proxy service
-		managementasset.StartAutoUpdater(context.Background(), configFilePath)
+		if tuiMode {
+			if standalone {
+				// Standalone mode: start an embedded local server and connect TUI client to it.
+				managementasset.StartAutoUpdater(context.Background(), configFilePath)
+				hook := tui.NewLogHook(2000)
+				hook.SetFormatter(&logging.LogFormatter{})
+				log.AddHook(hook)
 
-		// 初始化并启动 Kiro token 后台刷新
-		if cfg.AuthDir != "" {
-			kiro.InitializeAndStart(cfg.AuthDir, cfg)
-			defer kiro.StopGlobalRefreshManager()
+				origStdout := os.Stdout
+				origStderr := os.Stderr
+				origLogOutput := log.StandardLogger().Out
+				log.SetOutput(io.Discard)
+
+				devNull, errOpenDevNull := os.Open(os.DevNull)
+				if errOpenDevNull == nil {
+					os.Stdout = devNull
+					os.Stderr = devNull
+				}
+
+				restoreIO := func() {
+					os.Stdout = origStdout
+					os.Stderr = origStderr
+					log.SetOutput(origLogOutput)
+					if devNull != nil {
+						_ = devNull.Close()
+					}
+				}
+
+				localMgmtPassword := fmt.Sprintf("tui-%d-%d", os.Getpid(), time.Now().UnixNano())
+				if password == "" {
+					password = localMgmtPassword
+				}
+
+				cancel, done := cmd.StartServiceBackground(cfg, configFilePath, password)
+
+				client := tui.NewClient(cfg.Port, password)
+				ready := false
+				backoff := 100 * time.Millisecond
+				for i := 0; i < 30; i++ {
+					if _, errGetConfig := client.GetConfig(); errGetConfig == nil {
+						ready = true
+						break
+					}
+					time.Sleep(backoff)
+					if backoff < time.Second {
+						backoff = time.Duration(float64(backoff) * 1.5)
+					}
+				}
+
+				if !ready {
+					restoreIO()
+					cancel()
+					<-done
+					fmt.Fprintf(os.Stderr, "TUI error: embedded server is not ready\n")
+					return
+				}
+
+				if errRun := tui.Run(cfg.Port, password, hook, origStdout); errRun != nil {
+					restoreIO()
+					fmt.Fprintf(os.Stderr, "TUI error: %v\n", errRun)
+				} else {
+					restoreIO()
+				}
+
+				cancel()
+				<-done
+			} else {
+				// Default TUI mode: pure management client.
+				// The proxy server must already be running.
+				if errRun := tui.Run(cfg.Port, password, nil, os.Stdout); errRun != nil {
+					fmt.Fprintf(os.Stderr, "TUI error: %v\n", errRun)
+				}
+			}
+		} else {
+      // Start the main proxy service
+      managementasset.StartAutoUpdater(context.Background(), configFilePath)
+
+      if cfg.AuthDir != "" {
+        kiro.InitializeAndStart(cfg.AuthDir, cfg)
+        defer kiro.StopGlobalRefreshManager()
+      }
+
+      cmd.StartService(cfg, configFilePath, password)
 		}
-
-		cmd.StartService(cfg, configFilePath, password)
 	}
 }

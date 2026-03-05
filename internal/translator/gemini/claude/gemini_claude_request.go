@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"strings"
 
+	"github.com/router-for-me/CLIProxyAPI/v6/internal/registry"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/translator/gemini/common"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -28,7 +29,7 @@ const geminiClaudeThoughtSignature = "skip_thought_signature_validator"
 // Returns:
 //   - []byte: The transformed request in Gemini CLI format.
 func ConvertClaudeRequestToGemini(modelName string, inputRawJSON []byte, _ bool) []byte {
-	rawJSON := bytes.Clone(inputRawJSON)
+	rawJSON := inputRawJSON
 	rawJSON = bytes.Replace(rawJSON, []byte(`"url":{"type":"string","format":"uri",`), []byte(`"url":{"type":"string",`), -1)
 
 	// Build output Gemini CLI request JSON
@@ -151,15 +152,39 @@ func ConvertClaudeRequestToGemini(modelName string, inputRawJSON []byte, _ bool)
 		}
 	}
 
-	// Map Anthropic thinking -> Gemini thinkingBudget/include_thoughts when enabled
+	// Map Anthropic thinking -> Gemini thinking config when enabled
 	// Translator only does format conversion, ApplyThinking handles model capability validation.
 	if t := gjson.GetBytes(rawJSON, "thinking"); t.Exists() && t.IsObject() {
-		if t.Get("type").String() == "enabled" {
+		switch t.Get("type").String() {
+		case "enabled":
 			if b := t.Get("budget_tokens"); b.Exists() && b.Type == gjson.Number {
 				budget := int(b.Int())
 				out, _ = sjson.Set(out, "generationConfig.thinkingConfig.thinkingBudget", budget)
 				out, _ = sjson.Set(out, "generationConfig.thinkingConfig.includeThoughts", true)
 			}
+		case "adaptive", "auto":
+			// For adaptive thinking:
+			// - If output_config.effort is explicitly present, pass through as thinkingLevel.
+			// - Otherwise, treat it as "enabled with target-model maximum" and emit thinkingBudget=max.
+			// ApplyThinking handles clamping to target model's supported levels.
+			effort := ""
+			if v := gjson.GetBytes(rawJSON, "output_config.effort"); v.Exists() && v.Type == gjson.String {
+				effort = strings.ToLower(strings.TrimSpace(v.String()))
+			}
+			if effort != "" {
+				out, _ = sjson.Set(out, "generationConfig.thinkingConfig.thinkingLevel", effort)
+			} else {
+				maxBudget := 0
+				if mi := registry.LookupModelInfo(modelName, "gemini"); mi != nil && mi.Thinking != nil {
+					maxBudget = mi.Thinking.Max
+				}
+				if maxBudget > 0 {
+					out, _ = sjson.Set(out, "generationConfig.thinkingConfig.thinkingBudget", maxBudget)
+				} else {
+					out, _ = sjson.Set(out, "generationConfig.thinkingConfig.thinkingLevel", "high")
+				}
+			}
+			out, _ = sjson.Set(out, "generationConfig.thinkingConfig.includeThoughts", true)
 		}
 	}
 	if v := gjson.GetBytes(rawJSON, "temperature"); v.Exists() && v.Type == gjson.Number {
